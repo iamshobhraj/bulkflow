@@ -1,0 +1,14 @@
+{
+  "name": "bulkflow",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+      "dev:worker": "wrangler dev --local --config wrangler.toml",
+      "deploy:worker": "wrangler deploy --config wrangler.toml",
+      "db:migrate": "wrangler d1 execute campaign-db --file=apps/worker/schema.sql --remote",
+      "dev:web": "pnpm --filter @bulkflow/web dev",
+      "build:web": "pnpm --filter @bulkflow/web build"
+    },
+    "workspaces": ["apps/*", "shared"]
+}
