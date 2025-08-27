@@ -1,1 +1,2 @@
-# BulkFlow\nEvent-driven bulk campaign engine with Cloudflare Workers, AWS SQS, D1, and Next.js\n
+# BulkFlow
+Event-driven bulk campaign engine with Cloudflare Workers, AWS SQS, D1, and Next.js
