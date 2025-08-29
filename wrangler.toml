@@ -10,4 +10,4 @@ database_name = "campaign-db"
 database_id = "2b26f100-3822-48d6-8c8b-4b984902004e"
 
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["*/5 * * * *"]
