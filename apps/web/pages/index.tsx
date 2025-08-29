@@ -28,11 +28,16 @@ const api = axios.create({
   baseURL: API_BASE,
 });
 api.interceptors.request.use((config) => {
-  if (!config.headers) config.headers = {};
-  const token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
-  if (token) config.headers["x-admin-token"] = token;
+  const token =
+    (typeof window !== "undefined" && localStorage.getItem(TOKEN_KEY)) || null;
+
+  if (token) {
+    (config.headers ??= {} as any);
+    (config.headers as any)["x-admin-token"] = token;
+  }
   return config;
 });
+
 
 /* ========= Types ========= */
 type Service = { id: string; name: string; duration_min: number; active: number };
