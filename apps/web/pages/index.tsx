@@ -1,171 +1,322 @@
-import { useEffect, useState } from "react";
-import { api, setAdminToken, clearAdminToken, req } from "../lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 
-export default function Admin() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+/* ========= Config ========= */
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+const DISPLAY_TZ = "Asia/Kolkata"; // change if you prefer another timezone
+const TOKEN_KEY = "bulkflow_admin_token";
+
+/* ========= Time helpers ========= */
+function toUtcString(d: Date) {
+  return d.toISOString().slice(0, 19).replace("T", " "); // "YYYY-MM-DD HH:MM:SS" (UTC)
+}
+function parseUtc(tsUtc: string) {
+  return new Date(tsUtc.replace(" ", "T") + "Z").getTime();
+}
+function fmtLocal(tsUtc: string, withDate = true) {
+  const d = new Date(tsUtc.replace(" ", "T") + "Z");
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: DISPLAY_TZ,
+    ...(withDate ? { dateStyle: "medium" } : {}),
+    timeStyle: "short",
+    hour12: false,
+  }).format(d);
+}
+
+/* ========= API helper ========= */
+const api = axios.create({
+  baseURL: API_BASE,
+});
+api.interceptors.request.use((config) => {
+  if (!config.headers) config.headers = {};
+  const token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
+  if (token) config.headers["x-admin-token"] = token;
+  return config;
+});
+
+/* ========= Types ========= */
+type Service = { id: string; name: string; duration_min: number; active: number };
+type Slot = { id: string; service_id: string; start_ts: string; end_ts: string; capacity: number; booked_count: number };
+type Booking = { id: string; chat_id: string; status: string; service: string; start_ts: string };
+
+/* ========= Page ========= */
+export default function AdminPage() {
+  const [token, setToken] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState("");
-  const [msg, setMsg] = useState("");
+  const [showToken, setShowToken] = useState(false);
+
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<string>("");
-  const [slots, setSlots] = useState<any[]>([]);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
 
-  const DISPLAY_TZ = "Asia/Kolkata";
+  // form fields
+  const [date, setDate] = useState("");     // "YYYY-MM-DD" (local)
+  const [time, setTime] = useState("");     // "HH:MM" (local)
+  const [duration, setDuration] = useState<number>(30);
+  const [capacity, setCapacity] = useState<number>(1);
 
+  /* ----- auth boot ----- */
   useEffect(() => {
-    const t = typeof window !== "undefined" ? window.localStorage.getItem("bulkflow_admin_token") : null;
-    if (!t) { setAuthed(false); return; }
-    req("/admin/services/list").then(() => setAuthed(true)).catch(() => setAuthed(false));
+    const t = localStorage.getItem(TOKEN_KEY);
+    if (t) setToken(t);
   }, []);
 
-  async function login() {
+  /* ----- load data ----- */
+  async function refresh() {
+    setMsg("");
+    try {
+      const [svc, sl, bk] = await Promise.all([
+        api.get("/admin/services/list"),
+        api.get("/admin/slots/list", { params: { available: "1" } }), // server already future-filters
+        api.get("/admin/bookings/recent"),
+      ]);
+      setServices(svc.data.results || []);
+      setSlots(sl.data.results || []);
+      setBookings(bk.data.results || []);
+      if (!selected && (svc.data.results || []).length) setSelected(svc.data.results[0].id);
+    } catch (e: any) {
+      setMsg(e?.response?.data || e?.message || "Load failed");
+    }
+  }
+  useEffect(() => { if (token) refresh(); }, [token]);
+
+  /* ----- login / logout ----- */
+  function onLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tokenInput.trim()) return setMsg("Enter ADMIN_TOKEN");
+    localStorage.setItem(TOKEN_KEY, tokenInput.trim());
+    setToken(tokenInput.trim());
+    setTokenInput("");
+    setMsg("");
+  }
+  function onLogout() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    setServices([]);
+    setSlots([]);
+    setBookings([]);
+  }
+
+  /* ----- seed ----- */
+  async function onSeed() {
     setBusy(true); setMsg("");
     try {
-      setAdminToken(tokenInput.trim());
-      await req("/admin/services/list");
-      setAuthed(true); setMsg("Logged in.");
+      await api.post("/admin/seed");
+      setMsg("Seeded demo service & slots.");
       await refresh();
-    } catch (e:any) {
-      clearAdminToken();
-      setAuthed(false);
-      setMsg(e.message || "Invalid token");
+    } catch (e: any) {
+      setMsg(e?.response?.data || e?.message || "Seed failed");
     } finally { setBusy(false); }
   }
-  function logout() {
-    clearAdminToken(); setAuthed(false); setServices([]); setSlots([]);
-    setBookings([]);
-    setMsg("Logged out.");
-  }
 
-  async function refresh() {
-    if (!authed) return;
-    setBusy(true);
-    try {
-      const s: any = await api.services.list(); setServices(s.results || []);
-      if (selected) { const sl: any = await api.slots.list(selected);
-      setSlots(sl.results || []); } else setSlots([]);
-      const b: any = await api.bookings.recent();
-      setBookings(b.results || []);
-    } catch (e:any) { setMsg(e.message) } finally { setBusy(false) }
-  }
-  useEffect(() => { refresh(); }, [authed, selected]);
-
-  async function onSeed() { setBusy(true); setMsg(""); try { await api.seed(); setMsg("Seeded demo service & slots."); await refresh(); } catch (e:any){ setMsg(e.message) } finally { setBusy(false) } }
-
-  function toUtcString(d: Date){
-    return d.toISOString().slice(0, 19).replace("T", " ");
-  }
-  async function onCreateService(e:any) {
-    e.preventDefault(); const form = new FormData(e.currentTarget);
-    const id = String(form.get("id")||"").trim(), name = String(form.get("name")||"").trim(), duration = Number(form.get("duration")||0);
-    if (!id || !name || !duration) return setMsg("Fill all service fields.");
-    setBusy(true);
-    try { await api.services.create({ id, name, duration_min: duration, active: 1 }); setMsg("Service created."); e.currentTarget.reset(); await refresh(); } catch(e:any){ setMsg(e.message) } finally { setBusy(false) }
-  }
-
-  async function onCreateSlot(e:any) {
-    e.preventDefault(); const form = new FormData(e.currentTarget);
-    const service_id = selected || String(form.get("service_id")||"").trim();
-    const date = String(form.get("date")||"").trim();
-    const start = String(form.get("start")||"").trim();
-    const duration = Number(form.get("duration")||0);
-    const capacity = Number(form.get("capacity")||0);
-    if (!service_id || !date || !start || !duration || !capacity) return setMsg("Fill all slot fields.");
-    const localStart = new Date(`${date}T${start}:00`);
+  /* ----- create slot (LOCAL → UTC) ----- */
+  async function onCreateSlot(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected || !date || !time || !duration || !capacity) {
+      setMsg("Fill all slot fields."); return;
+    }
+    const localStart = new Date(`${date}T${time}:00`);
     const start_ts = toUtcString(localStart);
-    const startDate = new Date(`${date}T${start}:00Z`);
-    const end_ts = toUtcString(new Date(localStart.getTime() + duration*60_000));
-    try { await api.slots.create({ service_id, start_ts, end_ts, capacity }); setMsg("Slot created."); e.currentTarget.reset(); await refresh(); } catch(e:any){ setMsg(e.message) } finally { setBusy(false) }
+    const end_ts = toUtcString(new Date(localStart.getTime() + duration * 60_000));
+
+    setBusy(true); setMsg("");
+    try {
+      await api.post("/admin/slots/create", {
+        service_id: selected, start_ts, end_ts, capacity
+      });
+      setMsg("Slot created.");
+      setTime(""); setCapacity(1);
+      await refresh();
+    } catch (e: any) {
+      setMsg(e?.response?.data || e?.message || "Create failed");
+    } finally { setBusy(false); }
   }
 
-  if (authed === false) {
+  /* ----- future-only client filter (belt & suspenders) ----- */
+  const futureSlots = useMemo(() => {
+    const now = Date.now();
+    const graceMs = 2 * 60 * 1000;
+    return (slots || []).filter(s => parseUtc(s.start_ts) > (now + graceMs));
+  }, [slots]);
+
+  /* ----- UI ----- */
+  if (!token) {
     return (
-      <main style={{maxWidth:380, margin:"15vh auto", fontFamily:"ui-sans-serif, system-ui"}}>
-        <h1 style={{fontSize:22, fontWeight:700, marginBottom:12}}>BulkFlow Admin Login</h1>
-        <p style={{opacity:.8, marginBottom:12}}>Enter your admin token to manage services, slots, and bookings.</p>
-        <input type="password" placeholder="ADMIN_TOKEN" value={tokenInput} onChange={(e)=>setTokenInput(e.target.value)}
-          style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:10}} />
-        <button onClick={login} disabled={busy} style={{padding:"8px 12px"}}>Login</button>
-        {msg && <p style={{color:"#a00", marginTop:10}}>{msg}</p>}
-      </main>
-    )
-  }
-
-
-
-  if (authed === null) return <main style={{maxWidth:380, margin:"15vh auto"}}>Checking session…</main>
-
-
-  
-  function fmtLocal(tsUtc: string, withDate = true) {
-    const d = new Date(tsUtc.replace(" ", "T") + "Z");
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone: DISPLAY_TZ,
-      ...(withDate ? {dateStyle: "medium"} : {}),
-    })
+      <div style={styles.wrap}>
+        <div style={styles.card}>
+          <h2 style={{ marginTop: 0 }}>BulkFlow Admin</h2>
+          <form onSubmit={onLogin}>
+            <label style={styles.label}>Admin Token</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type={showToken ? "text" : "password"}
+                placeholder="ADMIN_TOKEN"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                style={styles.input}
+              />
+              <button type="button" onClick={() => setShowToken(s => !s)} style={styles.buttonGhost}>
+                {showToken ? "Hide" : "Show"}
+              </button>
+            </div>
+            <button type="submit" style={styles.buttonPrimary}>Login</button>
+          </form>
+          {msg && <p style={styles.msg}>{msg}</p>}
+          <p style={{ color: "#666", fontSize: 12, marginTop: 12 }}>
+            Your token is stored only in your browser (localStorage) and sent as <code>x-admin-token</code> to the API.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <main style={{maxWidth:900, margin:"40px auto", fontFamily:"ui-sans-serif, system-ui"}}>
-      <header style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12}}>
-        <div><h1 style={{fontSize:26, fontWeight:700}}>BulkFlow Admin (Telegram Booking)</h1><p style={{opacity:.7}}>Manage services, slots, and bookings.</p></div>
+    <div style={styles.wrap}>
+      <div style={styles.topbar}>
         <div>
-          <button onClick={refresh} disabled={busy} style={{marginRight:8}}>🔄 Refresh</button>
-          <button onClick={onSeed} disabled={busy} style={{marginRight:8}}>🌱 Seed Demo</button>
-          <button onClick={logout}>Logout</button>
+          <strong>BulkFlow Admin</strong>
+          <span style={{ marginLeft: 12, color: "#888" }}>API: {API_BASE || "(relative /api)"}</span>
         </div>
-      </header>
-      {msg && <div style={{margin:"8px 0", color:"#0a7"}}>{msg}</div>}
-
-      <section style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:24, marginTop:12}}>
-        <div style={{border:"1px solid #eee", borderRadius:12, padding:16}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>➕ New Service</h2>
-          <form onSubmit={onCreateService} style={{display:"grid", gap:8}}>
-            <input name="id" placeholder="id (e.g., demo_call)" />
-            <input name="name" placeholder="name (Demo Call)" />
-            <input name="duration" type="number" placeholder="duration (min)" defaultValue={30} />
-            <button disabled={busy}>Create Service</button>
-          </form>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={refresh} disabled={busy} style={styles.buttonGhost}>Refresh</button>
+          <button onClick={onSeed} disabled={busy} style={styles.buttonGhost}>Seed demo</button>
+          <button onClick={onLogout} style={styles.buttonDanger}>Logout</button>
         </div>
+      </div>
 
-        <div style={{border:"1px solid #eee", borderRadius:12, padding:16}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>➕ New Slot</h2>
-          <form onSubmit={onCreateSlot} style={{display:"grid", gap:8}}>
-            <label>Service</label>
-            <select name="service_id" value={selected} onChange={e=>setSelected(e.target.value)}>
-              <option value="">— choose —</option>
-              {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}
-            </select>
-            <input name="date" type="date" />
-            <input name="start" type="time" />
-            <input name="duration" type="number" defaultValue={30} />
-            <input name="capacity" type="number" defaultValue={1} />
-            <button disabled={busy}>Create Slot</button>
-          </form>
-        </div>
-      </section>
+      {msg && <p style={styles.msg}>{msg}</p>}
 
-      <section style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:24, marginTop:24}}>
-        <div style={{border:"1px solid #eee", borderRadius:12, padding:16}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>🧩 Services</h2>
+      <div style={styles.grid}>
+        {/* Services */}
+        <div style={styles.card}>
+          <h3>Services</h3>
           {!services.length && <p>No services yet.</p>}
-          <ul>{services.map(s => <li key={s.id}>{s.name} <small style={{opacity:.6}}>(id: {s.id}, {s.duration_min}m)</small></li>)}</ul>
+          {!!services.length && (
+            <select value={selected} onChange={(e) => setSelected(e.target.value)} style={styles.input}>
+              {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <p style={{ color: "#666", fontSize: 12, marginTop: 6 }}>
+            Need more services? Use the API: <code>POST /admin/services/create</code>
+          </p>
         </div>
 
-        <div style={{border:"1px solid #eee", borderRadius:12, padding:16}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>⏱ Slots {selected && <small style={{opacity:.6}}>for {selected}</small>}</h2>
-          {!slots.length && <p>Select a service to view slots.</p>}
-          <ul>{slots.map(sl => <li key={sl.id}>{fmtLocal(sl.start_ts)} → {fmtLocal(sl.end_ts)} • cap {sl.capacity} • booked {sl.booked_count}</li>)}</ul>
+        {/* Create Slot */}
+        <div style={styles.card}>
+          <h3>Create Slot</h3>
+          <form onSubmit={onCreateSlot}>
+            <div style={styles.row}>
+              <div style={{ flex: 1 }}>
+                <label style={styles.label}>Date</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} style={styles.input} />
+              </div>
+              <div style={{ width: 140 }}>
+                <label style={styles.label}>Start (local)</label>
+                <input type="time" value={time} onChange={e => setTime(e.target.value)} style={styles.input} />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={styles.label}>Duration (min)</label>
+                <input type="number" min={5} step={5} value={duration}
+                  onChange={e => setDuration(Number(e.target.value))} style={styles.input} />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={styles.label}>Capacity</label>
+                <input type="number" min={1} step={1} value={capacity}
+                  onChange={e => setCapacity(Number(e.target.value))} style={styles.input} />
+              </div>
+            </div>
+            <button type="submit" disabled={busy || !selected || !date || !time} style={styles.buttonPrimary}>
+              Create
+            </button>
+          </form>
+          <p style={{ color: "#666", fontSize: 12, marginTop: 6 }}>
+            Saved as UTC in DB; displayed in {DISPLAY_TZ}.
+          </p>
         </div>
-      </section>
 
-      <section style={{marginTop:24, border:"1px solid #eee", borderRadius:12, padding:16}}>
-        <h2 style={{fontSize:18, marginBottom:8}}>📒 Recent Bookings</h2>
-        {!bookings.length && <p>No bookings yet.</p>}
-        <ul>{bookings.map(b => <li key={b.id}>{b.service} @ {b.start_ts} — {b.status} <span style={{opacity:.6}}>(chat {b.chat_id})</span></li>)}</ul>
-      </section>
-    </main>
-  )
+        {/* Future Slots */}
+        <div style={{ ...styles.card, gridColumn: "1 / -1" }}>
+          <h3>Future Slots (Available)</h3>
+          {!futureSlots.length && <p>No upcoming available slots.</p>}
+          {!!futureSlots.length && (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th>Service</th><th>Start</th><th>End</th><th>Cap</th><th>Booked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {futureSlots.map(s => (
+                  <tr key={s.id}>
+                    <td>{s.service_id}</td>
+                    <td>{fmtLocal(s.start_ts)}</td>
+                    <td>{fmtLocal(s.end_ts)}</td>
+                    <td>{s.capacity}</td>
+                    <td>{s.booked_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Recent Bookings */}
+        <div style={{ ...styles.card, gridColumn: "1 / -1" }}>
+          <h3>Recent Bookings</h3>
+          {!bookings.length && <p>No bookings yet.</p>}
+          {!!bookings.length && (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th>ID</th><th>Service</th><th>Start</th><th>Status</th><th>Chat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.map(b => (
+                  <tr key={b.id}>
+                    <td style={{ fontFamily: "monospace" }}>{b.id.slice(0, 8)}…</td>
+                    <td>{b.service}</td>
+                    <td>{fmtLocal(b.start_ts)}</td>
+                    <td>{b.status}</td>
+                    <td>{b.chat_id}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <footer style={{ color: "#888", fontSize: 12, margin: "24px 0" }}>
+        Need raw JSON? <code>GET /admin/slots/list?available=1</code> and <code>GET /admin/bookings/recent</code>
+      </footer>
+    </div>
+  );
 }
+
+/* ========= styles ========= */
+const styles: Record<string, React.CSSProperties> = {
+  wrap: { maxWidth: 960, margin: "24px auto", padding: "0 16px", fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial" },
+  topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 },
+  card: { background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.04)" },
+  row: { display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 12 },
+  label: { display: "block", fontSize: 12, color: "#666", marginBottom: 6 },
+  input: { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc" },
+  buttonPrimary: { padding: "8px 12px", borderRadius: 8, border: "1px solid #1a73e8", background: "#1a73e8", color: "#fff", cursor: "pointer" },
+  buttonGhost: { padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd", background: "#fafafa", cursor: "pointer" },
+  buttonDanger: { padding: "8px 12px", borderRadius: 8, border: "1px solid #e53e3e", background: "#e53e3e", color: "#fff", cursor: "pointer" },
+  msg: { background: "#fff7e6", border: "1px solid #ffe58f", padding: 10, borderRadius: 8 },
+  table: { width: "100%", borderCollapse: "collapse" },
+};
+
+/* table styles */
+(Object.assign as any)(styles, {
+  tableThTd: {
+    padding: "8px 10px", borderBottom: "1px solid #eee", textAlign: "left", fontSize: 14,
+  },
+});
