@@ -138,10 +138,17 @@ app.post("/admin/services/create", async c => {
 app.get("/admin/slots/list", async c => {
   if (c.env.ADMIN_TOKEN && c.req.header("x-admin-token") !== c.env.ADMIN_TOKEN) return c.text("forbidden", 403)
   const serviceId = c.req.query("service")
-  const sql = serviceId
-    ? "SELECT id,service_id,start_ts,end_ts,capacity,booked_count FROM slots WHERE service_id=?1 ORDER BY start_ts"
-    : "SELECT id,service_id,start_ts,end_ts,capacity,booked_count FROM slots ORDER BY start_ts"
-  const rows = serviceId ? await c.env.DB.prepare(sql).bind(serviceId).all() : await c.env.DB.prepare(sql).all()
+  const onlyAvailable = c.req.query("available") === "1";
+  const grace = "+2 minutes"; // to avoid race conditions
+
+  const baseWhere = [
+    serviceId ? "service_id=?1" : "1=1",
+    `start_ts > datetime('now', '${grace}')`,
+    onlyAvailable ? "booked_count < capacity" : "1=1"
+  ].join(" AND ");
+  const sql = `SELECT id, service_id, start_ts, end_ts, capacity, booked_count FROM slots WHERE ${baseWhere} ORDER BY start_ts`;
+  const q = c.env.DB.prepare(sql);
+  const rows = serviceId ? await q.bind(serviceId).all() : await q.all()
   return c.json({ results: rows.results || [] })
 })
 app.post("/admin/slots/create", async c => {

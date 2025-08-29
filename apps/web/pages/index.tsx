@@ -12,6 +12,8 @@ export default function Admin() {
   const [slots, setSlots] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
 
+  const DISPLAY_TZ = "Asia/Kolkata";
+
   useEffect(() => {
     const t = typeof window !== "undefined" ? window.localStorage.getItem("bulkflow_admin_token") : null;
     if (!t) { setAuthed(false); return; }
@@ -26,11 +28,15 @@ export default function Admin() {
       setAuthed(true); setMsg("Logged in.");
       await refresh();
     } catch (e:any) {
-      clearAdminToken(); setAuthed(false); setMsg(e.message || "Invalid token");
+      clearAdminToken();
+      setAuthed(false);
+      setMsg(e.message || "Invalid token");
     } finally { setBusy(false); }
   }
   function logout() {
-    clearAdminToken(); setAuthed(false); setServices([]); setSlots([]); setBookings([]); setMsg("Logged out.");
+    clearAdminToken(); setAuthed(false); setServices([]); setSlots([]);
+    setBookings([]);
+    setMsg("Logged out.");
   }
 
   async function refresh() {
@@ -38,14 +44,19 @@ export default function Admin() {
     setBusy(true);
     try {
       const s: any = await api.services.list(); setServices(s.results || []);
-      if (selected) { const sl: any = await api.slots.list(selected); setSlots(sl.results || []); } else setSlots([]);
-      const b: any = await api.bookings.recent(); setBookings(b.results || []);
+      if (selected) { const sl: any = await api.slots.list(selected);
+      setSlots(sl.results || []); } else setSlots([]);
+      const b: any = await api.bookings.recent();
+      setBookings(b.results || []);
     } catch (e:any) { setMsg(e.message) } finally { setBusy(false) }
   }
   useEffect(() => { refresh(); }, [authed, selected]);
 
   async function onSeed() { setBusy(true); setMsg(""); try { await api.seed(); setMsg("Seeded demo service & slots."); await refresh(); } catch (e:any){ setMsg(e.message) } finally { setBusy(false) } }
 
+  function toUtcString(d: Date){
+    return d.toISOString().slice(0, 19).replace("T", " ");
+  }
   async function onCreateService(e:any) {
     e.preventDefault(); const form = new FormData(e.currentTarget);
     const id = String(form.get("id")||"").trim(), name = String(form.get("name")||"").trim(), duration = Number(form.get("duration")||0);
@@ -56,12 +67,16 @@ export default function Admin() {
 
   async function onCreateSlot(e:any) {
     e.preventDefault(); const form = new FormData(e.currentTarget);
-    const service_id = selected || String(form.get("service_id")||"").trim(); const date = String(form.get("date")||"").trim(); const start = String(form.get("start")||"").trim();
-    const duration = Number(form.get("duration")||0); const capacity = Number(form.get("capacity")||0);
+    const service_id = selected || String(form.get("service_id")||"").trim();
+    const date = String(form.get("date")||"").trim();
+    const start = String(form.get("start")||"").trim();
+    const duration = Number(form.get("duration")||0);
+    const capacity = Number(form.get("capacity")||0);
     if (!service_id || !date || !start || !duration || !capacity) return setMsg("Fill all slot fields.");
-    const start_ts = `${date} ${start}:00`; const startDate = new Date(`${date}T${start}:00Z`);
-    const end_ts = new Date(startDate.getTime() + duration * 60_000).toISOString().slice(0,19).replace("T"," ");
-    setBusy(true);
+    const localStart = new Date(`${date}T${start}:00`);
+    const start_ts = toUtcString(localStart);
+    const startDate = new Date(`${date}T${start}:00Z`);
+    const end_ts = toUtcString(new Date(localStart.getTime() + duration*60_000));
     try { await api.slots.create({ service_id, start_ts, end_ts, capacity }); setMsg("Slot created."); e.currentTarget.reset(); await refresh(); } catch(e:any){ setMsg(e.message) } finally { setBusy(false) }
   }
 
@@ -78,7 +93,19 @@ export default function Admin() {
     )
   }
 
+
+
   if (authed === null) return <main style={{maxWidth:380, margin:"15vh auto"}}>Checking session…</main>
+
+
+  
+  function fmtLocal(tsUtc: string, withDate = true) {
+    const d = new Date(toUtc.replace(" ", "T") + "Z");
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: DISPLAY_TZ,
+      ...(withDate ? {dateStyle: "medium"} : {}),
+    })
+  }
 
   return (
     <main style={{maxWidth:900, margin:"40px auto", fontFamily:"ui-sans-serif, system-ui"}}>
@@ -130,7 +157,7 @@ export default function Admin() {
         <div style={{border:"1px solid #eee", borderRadius:12, padding:16}}>
           <h2 style={{fontSize:18, marginBottom:8}}>⏱ Slots {selected && <small style={{opacity:.6}}>for {selected}</small>}</h2>
           {!slots.length && <p>Select a service to view slots.</p>}
-          <ul>{slots.map(sl => <li key={sl.id}>{sl.start_ts} → {sl.end_ts} • cap {sl.capacity} • booked {sl.booked_count}</li>)}</ul>
+          <ul>{slots.map(sl => <li key={sl.id}>{fmtLocal(sl.start_ts)} → {fmtLocal(sl.end_ts)} • cap {sl.capacity} • booked {sl.booked_count}</li>)}</ul>
         </div>
       </section>
 
