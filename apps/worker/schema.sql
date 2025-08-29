@@ -1,25 +1,41 @@
-CREATE TABLE IF NOT EXISTS campaigns (
+-- Booking Bot schema only (no legacy campaigns)
+
+CREATE TABLE IF NOT EXISTS services(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  scheduled_at TEXT,
-  created_at TEXT NOT NULL
+  duration_min INTEGER NOT NULL DEFAULT 30,
+  active INTEGER NOT NULL DEFAULT 1
 );
-CREATE TABLE IF NOT EXISTS recipients (
+
+CREATE TABLE IF NOT EXISTS slots(
   id TEXT PRIMARY KEY,
-  campaign_id TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'QUEUED',
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+  service_id TEXT NOT NULL REFERENCES services(id),
+  start_ts TEXT NOT NULL,
+  end_ts   TEXT NOT NULL,
+  capacity INTEGER NOT NULL DEFAULT 1,
+  booked_count INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_recipients_status ON recipients(status);
-CREATE TABLE IF NOT EXISTS delivery_logs (
+
+CREATE TABLE IF NOT EXISTS tg_users(
+  chat_id   TEXT PRIMARY KEY,
+  username  TEXT,
+  first_name TEXT,
+  last_name  TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS bookings(
   id TEXT PRIMARY KEY,
-  campaign_id TEXT NOT NULL,
-  recipient_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  ts TEXT NOT NULL,
-  FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+  chat_id TEXT NOT NULL REFERENCES tg_users(chat_id),
+  service_id TEXT NOT NULL REFERENCES services(id),
+  slot_id TEXT NOT NULL REFERENCES slots(id),
+  status TEXT NOT NULL DEFAULT 'CONFIRMED',
+  created_at TEXT DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_logs_campaign_ts ON delivery_logs(campaign_id, ts);
+
+CREATE TABLE IF NOT EXISTS sessions(
+  chat_id TEXT PRIMARY KEY,
+  state TEXT,
+  ctx TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
