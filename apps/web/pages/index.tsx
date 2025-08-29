@@ -100,7 +100,7 @@ export default function Admin() {
 
   
   function fmtLocal(tsUtc: string, withDate = true) {
-    const d = new Date(toUtc.replace(" ", "T") + "Z");
+    const d = new Date(tsUtc.replace(" ", "T") + "Z");
     return new Intl.DateTimeFormat("en-GB", {
       timeZone: DISPLAY_TZ,
       ...(withDate ? {dateStyle: "medium"} : {}),
