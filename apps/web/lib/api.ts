@@ -1,39 +1,26 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE!
+import axios from "axios";
 
-function getAdminToken(): string | null {
-  if (typeof window === "undefined") return null
-  return window.localStorage.getItem("bulkflow_admin_token")
-}
-export function setAdminToken(t: string) { if (typeof window !== "undefined") window.localStorage.setItem("bulkflow_admin_token", t) }
-export function clearAdminToken() { if (typeof window !== "undefined") window.localStorage.removeItem("bulkflow_admin_token") }
+export const TOKEN_KEY = "bulkflow_admin_token";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
-export async function req(path: string, init: RequestInit = {}) {
-  const headers = new Headers(init.headers)
-  headers.set("content-type", "application/json")
-  const token = getAdminToken()
-  if (token) headers.set("x-admin-token", token)
+export const api = axios.create({ baseURL: API_BASE });
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store" })
-  if (!res.ok) {
-    const text = await res.text().catch(() => "")
-    throw new Error(`${res.status} ${text || res.statusText}`)
+api.interceptors.request.use((config) => {
+  const token =
+    (typeof window !== "undefined" && localStorage.getItem(TOKEN_KEY)) || null;
+  if (token) {
+    (config.headers ??= {} as any);
+    (config.headers as any)["x-admin-token"] = token;
   }
-  return res.json()
-}
+  return config;
+});
 
-export const api = {
-  seed: () => req("/admin/seed", { method: "POST" }),
-  services: {
-    list: () => req("/admin/services/list"),
-    create: (body: { id: string; name: string; duration_min: number; active?: number }) =>
-      req("/admin/services/create", { method: "POST", body: JSON.stringify(body) }),
-  },
-  slots: {
-    list: (serviceId: string) => req(`/admin/slots/list?service=${encodeURIComponent(serviceId)}`),
-    create: (body: { service_id: string; start_ts: string; end_ts: string; capacity: number }) =>
-      req("/admin/slots/create", { method: "POST", body: JSON.stringify(body) }),
-  },
-  bookings: {
-    recent: () => req("/admin/bookings/recent"),
-  },
+export function setToken(t: string | null) {
+  if (typeof window === "undefined") return;
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
 }
