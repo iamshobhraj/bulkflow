@@ -70,7 +70,7 @@ export default function Admin() {
       <main style={{maxWidth:380, margin:"15vh auto", fontFamily:"ui-sans-serif, system-ui"}}>
         <h1 style={{fontSize:22, fontWeight:700, marginBottom:12}}>BulkFlow Admin Login</h1>
         <p style={{opacity:.8, marginBottom:12}}>Enter your admin token to manage services, slots, and bookings.</p>
-        <input placeholder="ADMIN_TOKEN" value={tokenInput} onChange={(e)=>setTokenInput(e.target.value)}
+        <input type="password" placeholder="ADMIN_TOKEN" value={tokenInput} onChange={(e)=>setTokenInput(e.target.value)}
           style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:10}} />
         <button onClick={login} disabled={busy} style={{padding:"8px 12px"}}>Login</button>
         {msg && <p style={{color:"#a00", marginTop:10}}>{msg}</p>}
