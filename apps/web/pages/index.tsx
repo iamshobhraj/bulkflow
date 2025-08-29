@@ -65,10 +65,6 @@ export default function Admin() {
         <SlotsTable slots={slots} />
         <BookingsTable bookings={bookings} />
       </div>
-
-      <footer className="text-xs text-gray-500 my-6">
-        Need raw JSON? <code>GET /admin/slots/list?available=1</code> and <code>GET /admin/bookings/recent</code>
-      </footer>
     </AuthGate>
   );
 }

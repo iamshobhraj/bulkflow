@@ -52,7 +52,6 @@ export default function SlotForm({ serviceId, onCreated }:{
         </button>
       </form>
       {msg && <p className="text-sm mt-2 text-gray-700">{msg}</p>}
-      <p className="text-xs text-gray-500 mt-2">Saved as UTC in DB; displayed in your local timezone.</p>
     </div>
   );
 }
