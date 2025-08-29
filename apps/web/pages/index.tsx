@@ -238,9 +238,6 @@ export default function AdminPage() {
               Create
             </button>
           </form>
-          <p style={{ color: "#666", fontSize: 12, marginTop: 6 }}>
-            Saved as UTC in DB; displayed in {DISPLAY_TZ}.
-          </p>
         </div>
 
         {/* Future Slots */}
