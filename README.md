@@ -16,3 +16,13 @@ It is powered by *Cloudflare Workers + D1* for backend and persistence, *AWS SQS
 ---
 
 ## 🏗 Architecture
+
+```mermaid
+flowchart LR
+    TG[Telegram User] --> BOT[Telegram Bot API]
+    BOT --> W[Cloudflare Worker API]
+    W --> D1[Cloudflare D1 Database]
+    W -->|Enqueue reminder| SQS[AWS SQS Queue]
+    SQS --> CRON[Cron Worker]
+    CRON --> BOT
+    Admin[Admin UI] --> W
